@@ -1,0 +1,119 @@
+name: Release toolchain
+
+permissions:
+  contents: write
+
+on:
+  push:
+    tags:
+      - "*"
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Tag to release
+        required: true
+        default: go1.23.2
+
+jobs:
+  test:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+
+      - name: test
+        run: cd src && ./all.bash
+        shell: bash
+
+  build:
+    runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        GOOS:
+          - linux
+          - darwin
+        GOARCH:
+          - amd64
+          - arm64
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+
+      - name: build
+        run: cd src && ./make.bash
+        shell: bash
+        env:
+          GOOS: ${{ matrix.GOOS }}
+          GOARCH: ${{ matrix.GOARCH }}
+          CGO_ENABLED: "0"
+
+      - name: trim
+        run: |
+          rm -rf pkg/*_*
+          mv pkg/tool/${{ matrix.GOOS }}_${{ matrix.GOARCH }} pkg
+          rm -rf pkg/tool/*_*
+          mv -f bin/${{ matrix.GOOS }}_${{ matrix.GOARCH }}/* bin/ || true
+          rm -rf bin/${{ matrix.GOOS }}_${{ matrix.GOARCH }}
+          mv pkg/${{ matrix.GOOS }}_${{ matrix.GOARCH }} pkg/tool
+          find . -type d -name 'testdata' -print0 | xargs -0 rm -rf
+          find . -name '*_test.go' -delete
+        shell: bash
+
+      - name: archive
+        run: cd .. && tar --exclude-vcs -zcf ${{ matrix.GOOS }}-${{ matrix.GOARCH }}.tar.gz go
+        shell: bash
+
+      - name: workaround actions/upload-artifact#176
+        run: |
+          echo "artifacts_path=$(realpath ..)" >> $GITHUB_ENV
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.GOOS }}-${{ matrix.GOARCH }}
+          path: ${{ env.artifacts_path }}/${{ matrix.GOOS }}-${{ matrix.GOARCH }}.tar.gz
+
+  create:
+    runs-on: ubuntu-22.04
+    needs: [test, build]
+    outputs:
+      url: ${{ steps.create_release.outputs.upload_url }}
+    steps:
+      - id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: build-${{ inputs.ref || github.ref }}
+          release_name: ${{ inputs.ref || github.ref }}
+          body: This is a build of the upstream ${{ inputs.ref || github.ref }} toolchain with `GOEXPERIMENT=gocacheprog` enabled.
+
+  upload:
+    strategy:
+      matrix:
+        GOOS:
+          - linux
+          - darwin
+        GOARCH:
+          - amd64
+          - arm64
+
+    runs-on: ubuntu-22.04
+    needs: [create]
+    steps:
+      - name: download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.GOOS }}-${{ matrix.GOARCH }}
+
+      - name: upload artifact
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create.outputs.url }}
+          asset_path: ${{ matrix.GOOS }}-${{ matrix.GOARCH }}.tar.gz
+          asset_name: ${{ matrix.GOOS }}-${{ matrix.GOARCH }}.tar.gz
+          asset_content_type: application/gzip

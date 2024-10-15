@@ -1,0 +1,16 @@
+name: Test toolchain
+
+on:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+      - name: test
+        run: cd src && ./all.bash
+        shell: bash
