@@ -1,0 +1,8 @@
+@@
+# Build a static toolchain which uses the default CGO_ENABLED.
+# https://github.com/golang/go/issues/51305
+@@
+-import "os"
+
+-fmt.Fprintf(&buf, "const defaultCGO_ENABLED = %s\n", quote(os.Getenv("CGO_ENABLED")))
++fmt.Fprintf(&buf, "const defaultCGO_ENABLED = %s\n", quote(""))

@@ -1,3 +1,7 @@
+> [!NOTE]
+> This is a fork of Go which enables `GOEXPERIMENT=gocacheprog` by default.
+> This fork will become unnecessary after https://github.com/golang/go/issues/64876 is fixed and released.
+
 # The Go Programming Language
 
 Go is an open source programming language that makes it easy to build simple,
